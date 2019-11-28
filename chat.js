@@ -135,6 +135,12 @@ export class TextMessage extends HTMLElement {
 		this.text = this.textContent.trim()
 		let ts = this.getAttribute('datetime')
 		if (ts)	this.time = new Date(ts)
+		let chat = this.closest(Chat.tag)
+		let from = this.getAttribute('from')
+		if (chat && from) {
+			let dude = chat.querySelector(`${Dude.tag}[name=${from}]`)
+			if (dude) this.from = dude
+		}
 		this.update()
 	}
 
