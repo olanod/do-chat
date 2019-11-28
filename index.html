@@ -4,19 +4,17 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<meta http-equiv="X-UA-Compatible" content="ie=edge">
-	<meta name="mapbox-token" content="pk.eyJ1Ijoib2xhbm9kIiwiYSI6IjdZdV9iTTQifQ.HP-razZKsNmITPgHs4ugIA">
 	<title>Chat</title>
 	<script type="module" src="chat.js" async></script>
 	<style>
-     html, body { margin: 0; padding: 0; height: 100%; }
-     :not(:defined) { opacity: 0; }
-     do-chat { height: 100%; }
+		 html, body { margin: 0; padding: 0; height: 100%; }
+		 :not(:defined) { opacity: 0; }
+		 do-chat { height: 100%; }
 	</style>
 </head>
 
 <body>
-	<do-chat channel="serious-talk">
+	<do-chat channel="serious-talk" me="daniel">
 		<do-dude name="daniel" slot="people">Daniel</do-dude>
 		<do-dude name="bob" slot="people">Bob</do-dude>
 		
@@ -29,16 +27,17 @@
 			I'm Bob.
 		</do-msg>
 
-		<form slot="action">
-			<input name="from" type="hidden" value="daniel"/>
-			<textarea name="message"></textarea>
-			<button>send</button>
+		<form slot="actions">
+				<do-msg-field name="message">
+						<button>send</button>
+				</do-msg-field>
 		</form>
+
 	</do-chat>
 
 	<script type="module">
 	 const chan = new BroadcastChannel('serious-talk')
-     chan.addEventListener('message', ({data}) => console.log(data))
+	 chan.addEventListener('message', ({data}) => console.log(data))
 	</script>
 </body>
 
