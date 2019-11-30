@@ -15,9 +15,6 @@
 
 <body>
 	<do-chat channel="serious-talk" me="daniel">
-		<do-dude name="daniel" slot="people">Daniel</do-dude>
-		<do-dude name="bob" slot="people">Bob</do-dude>
-		
 		<do-msg from="daniel" datetime="2020-01-01T12:34:59Z">
 			Hola! 😄
 		</do-msg>
@@ -26,6 +23,9 @@
 			
 			I'm Bob.
 		</do-msg>
+
+		<do-dude name="daniel" slot="people">Daniel</do-dude>
+		<do-dude name="bob" slot="people">Bob</do-dude>
 
 		<form slot="actions">
 				<do-msg-field name="message">
@@ -38,6 +38,7 @@
 	<script type="module">
 	 const chan = new BroadcastChannel('serious-talk')
 	 chan.addEventListener('message', ({data}) => console.log(data))
+	 addEventListener('serious-talk', ({detail: msg}) => console.log(msg.content))
 	</script>
 </body>
 

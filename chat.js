@@ -1,15 +1,27 @@
-const html = (strings, ...parts) =>
-	new DOMParser().parseFromString(parts
-		.reduce((tpl, value, i) => `${tpl}${strings[i]}${value}`, '')
-		.concat(strings[parts.length]),
-	'text/html').querySelector('template')
-const defineIds = ele => ele.shadowRoot.querySelectorAll('[id]')
-		.forEach(e => Object.defineProperty(ele, `$${e.id}`, { value: e }))
-const withTemplate = (ele, tpl, delegatesFocus = false) => {
-	ele.attachShadow({mode: 'open', delegatesFocus})
-		.append(tpl.content.cloneNode(true))
-	defineIds(ele)
+// avoid hijacking of the native method for the fun of maximizing encapsulation
+Object.defineProperty(Element.prototype, 'attachShadow',
+	{value: Element.prototype.attachShadow, enumerable: true, configurable: false, writable: false})
+const tagFn = fn => (strings, ...parts) => fn(parts
+	.reduce((tpl, value, i) => `${tpl}${strings[i]}${value}`, '')
+	.concat(strings[parts.length]))
+const html = tagFn(s => new DOMParser()
+	.parseFromString(`<template>${s}</template>`, 'text/html')
+	.querySelector('template'))
+const css = tagFn(s => {
+	let style = new CSSStyleSheet()
+	style.replaceSync(s)
+	return style
+})
+const attachShadowTemplate = (ele, delegatesFocus = false) => {
+	let klass = ele.constructor
+	let shadow = ele.attachShadow({mode: 'closed', delegatesFocus})
+	shadow.append(klass.template.content.cloneNode(true))
+	shadow.adoptedStyleSheets = klass.styles
+	return shadow
 }
+const formData = o => Object.entries(o)
+	.reduce((d, [k, v]) => d.append(k, v) || d, new FormData)
+const raf = requestAnimationFrame
 
 export class Dude extends HTMLElement {
 	static tag = 'do-dude'
@@ -28,8 +40,94 @@ customElements.define(Dude.tag, Dude)
 
 const unknownDude = Object.freeze(Object.assign(new Dude, {}))
 
-const chat = html`<template>
-<style>
+const relFmt = new Intl.RelativeTimeFormat()
+const timeFmt = new Intl.DateTimeFormat()
+const fmtTime = date => {
+	const now = new Date()
+	let diffMin = ((date - now) / 1000 / 60).toFixed()
+	let diffHour = (diffMin / 60).toFixed()
+	let diffDay = (diffHour / 24).toFixed()
+	return Math.abs(diffMin) < 60
+		? relFmt.format(diffMin, 'minute') : Math.abs(diffHour) < 24
+		? relFmt.format(diffHour, 'hour') : Math.abs(diffDay) < 7
+		? relFmt.format(diffDay, 'day')
+		: timeFmt.format(date)
+}
+
+export class TextMessage extends HTMLElement {
+	static tag = 'do-msg'
+	static template = html`
+<div id="from"></div>
+<time id="time"></time>
+<div id="txt"></div>`
+	static styles = [css`
+:host {
+	display: grid;
+	grid-template-rows: 1rem 1fr;
+	grid-template-columns: fit-content(0%) 1fr fit-content(0%);
+	margin: 0.5rem 0;
+}
+#from, time {
+	font-size: 0.8em;
+	grid-row: 1 / 2;
+}
+#from { font-weight: bold; }
+#time { grid-column: 3 / 4; }
+#txt {
+	grid-area: 2 / 1 / 3 / 4;
+}`]
+
+	#$from
+	#$time
+	#$txt
+
+	content = '...'
+	time = new Date()
+	from = unknownDude
+
+	constructor() {
+		super()
+		let shadow = attachShadowTemplate(this)
+		this.#$from = shadow.getElementById('from')
+		this.#$time = shadow.getElementById('time')
+		this.#$txt = shadow.getElementById('txt')
+	}
+
+	connectedCallback() {
+		let domContent = this.textContent.trim()
+		this.content = domContent || this.content
+		let ts = this.getAttribute('datetime')
+		if (ts)	this.time = new Date(ts)
+		let chat = this.closest('do-chat')
+		let from = this.getAttribute('from')
+		if (chat && from) {
+			let dude = chat.querySelector(`${Dude.tag}[name=${from}]`)
+			if (dude) this.from = dude
+		}
+		this.update()
+	}
+
+	update() {
+		raf(() => {
+			this.#$txt.innerHTML = this.content.replace(/\n/g, '<br />')
+			this.#$time.textContent = fmtTime(this.time)
+			this.#$time.dateTime = this.time.toISOString()
+			this.#$time.title = this.time.toLocaleString()
+			this.#$from.textContent = this.from.name
+		})
+	}
+}
+customElements.define(TextMessage.tag, TextMessage)
+
+export class Chat extends HTMLElement {
+	static tag = 'do-chat'
+	static template = html`
+<section id="ppl" hidden><slot name="people"></slot></section>
+<section id="msgs"><slot></slot></section>
+<section id="act">
+	<slot name="actions"></slot>
+</section>`
+	static styles = [css`
 :host {
 	display: flex;
 	flex-direction: column;
@@ -38,32 +136,37 @@ const chat = html`<template>
 	display: flex;
 	flex: 1;
 	flex-direction: column-reverse;
-}
-</style>
-
-<section id="ppl" hidden><slot name="people"></slot></section>
-<section id="msgs"><slot></slot></section>
-<section id="act">
-	<slot name="actions"></slot>
-</section>
-</template>`
-
-export class Chat extends HTMLElement {
-	static tag = 'do-chat'
+}`]
+	static autoInsert = new Map([
+		['text-message', TextMessage],
+	])
 
 	channel = 'default'
 	me = unknownDude
 
 	#chan
+  #autoInsert = ({type, ...data}) => {
+		if (Chat.autoInsert.has(type)) {
+			let Msg = Chat.autoInsert.get(type)
+			let msg = Object.assign(new Msg, {
+				time: new Date(data.ts),
+				from: this.me,
+				content: data[type],
+			})
+			this.dispatchEvent(new CustomEvent(this.channel, {detail: msg, bubbles: true}))
+			raf(() => this.prepend(msg))
+		}
+	}
 	#broadcastMessage = e => {
 		e.preventDefault()
 		let data = Object.fromEntries(new FormData(e.target).entries())
 		this.#chan.postMessage(data)
+		this.#autoInsert(data)
 	}
 
 	constructor() {
 		super()
-		withTemplate(this, chat)
+		attachShadowTemplate(this)
 	}
 
 	connectedCallback() {
@@ -82,80 +185,14 @@ export class Chat extends HTMLElement {
 }
 customElements.define(Chat.tag, Chat)
 
-const msg = html`<template>
-<style>
-:host {
-	display: grid;
-	grid-template-rows: 1rem 1fr;
-	grid-template-columns: fit-content(0%) 1fr fit-content(0%);
-	margin: 0.5rem 0;
-}
-#from, time {
-	font-size: 0.8em;
-	grid-row: 1 / 2;
-}
-#from { font-weight: bold; }
-#time { grid-column: 3 / 4; }
-#txt {
-	grid-area: 2 / 1 / 3 / 4;
-}
-</style>
-<div id="from"></div>
-<time id="time"></time>
-<div id="txt"></div>
-</template>`
-
-const relFmt = new Intl.RelativeTimeFormat()
-const timeFmt = new Intl.DateTimeFormat()
-const fmtTime = date => {
-	const now = new Date()
-	let diffMin = ((date - now) / 1000 / 60).toFixed()
-	let diffHour = (diffMin / 60).toFixed()
-	let diffDay = (diffHour / 24).toFixed()
-	return Math.abs(diffMin) < 60
-		? relFmt.format(diffMin, 'minute') : Math.abs(diffHour) < 24
-		? relFmt.format(diffHour, 'hour') : Math.abs(diffDay) < 7
-		? relFmt.format(diffDay, 'day')
-		: timeFmt.format(date)
-}
-
-export class TextMessage extends HTMLElement {
-	static tag = 'do-msg'
-
-	text = '...'
-	time = new Date()
-	from = unknownDude
-
-	constructor() {
-		super()
-		withTemplate(this, msg)
-	}
-
-	connectedCallback() {
-		this.text = this.textContent.trim()
-		let ts = this.getAttribute('datetime')
-		if (ts)	this.time = new Date(ts)
-		let chat = this.closest(Chat.tag)
-		let from = this.getAttribute('from')
-		if (chat && from) {
-			let dude = chat.querySelector(`${Dude.tag}[name=${from}]`)
-			if (dude) this.from = dude
-		}
-		this.update()
-	}
-
-	update() {
-		this.$txt.innerHTML = this.text.replace(/\n/g, '<br />')
-		this.$time.textContent = fmtTime(this.time)
-		this.$time.dateTime = this.time.toISOString()
-		this.$time.title = this.time.toLocaleString()
-		this.$from.textContent = this.from.name
-	}
-}
-customElements.define(TextMessage.tag, TextMessage)
-
-const msgField = html`<template>
-<style>
+export class TextMessageField extends HTMLElement {
+	static tag = 'do-msg-field'
+	static template = html`
+<div id="txt" contenteditable spellcheck role="textbox" tabindex="0">
+</div>
+<p id="plh"></p>
+<slot></slot>`
+	static styles = [css`
 :host {
 	display: flex;
 	position: relative;
@@ -175,29 +212,17 @@ const msgField = html`<template>
 	margin: 0;
 	padding: var(--padding);
 	font-style: italic;
-}
-</style>
-<div id="txt" contenteditable spellcheck role="textbox" tabindex="0">
-</div>
-<p id="plh"></p>
-<slot></slot>
-</template>`
-export class TextMessageField extends HTMLElement {
-	static tag = 'do-msg-field'
+}`]
 	static Msg = TextMessage
 	static formAssociated = true
 
 	value = ''
 	placeholder = 'Message'
 
+	#$txt
+	#$plh
 	#internals
 	#name = 'message'
-	#submit = () =>	{
-		if (!this.checkValidity()) return
-		this.#internals.form.dispatchEvent(
-			new Event('submit', {cancelable: true, bubbles: true})
-		)
-	}
 	#validate = () => {
 		if (!this.value) {
 			this.#internals.setValidity({customError: true}, 'Say something!')
@@ -206,36 +231,55 @@ export class TextMessageField extends HTMLElement {
 		}
 	}
 	#updateValue = () => {
-		this.value = this.$txt.textContent
-		if (this.value) this.$plh.textContent = ''
-		else this.$plh.textContent = this.placeholder
-		let val = new FormData()
-		val.append(this.name, this.value)
-		val.append('type', this.type)
-		this.#internals.setFormValue(val, this.value)
+		this.value = this.#$txt.textContent
+		if (this.value) this.#$plh.textContent = ''
+		else this.#$plh.textContent = this.placeholder
+
+		this.#internals.setFormValue(formData({
+			type: this.type,
+			[this.type]: this.value,
+			ts: new Date().toISOString()
+		}), this.value)
+		this.#validate()
+	}
+  #submit = () =>	{
+		if (!this.checkValidity()) return
+		this.#internals.form.dispatchEvent(
+			new Event('submit', {cancelable: true, bubbles: true})
+		)
+		this.#internals.form.reset()
 		this.#validate()
 	}
 	#submitOnEnter = e => {
 		if (e.code === 'Enter' && !e.shiftKey) {
 			e.preventDefault()
-			this.#submit()
+			this.#submit(e)
 		}
 	}
 
 	constructor() {
 		super()
-		withTemplate(this, msgField, true)
 		this.#internals = this.attachInternals()
+		let shadow = attachShadowTemplate(this, true)
+		this.#$txt = shadow.getElementById('txt')
+		this.#$plh = shadow.getElementById('plh')
 	}
 
 	connectedCallback() {
 		this.#name = this.getAttribute('name') || this.#name
 		this.placeholder = this.getAttribute('placeholder') || this.placeholder
 
-		this.$txt.addEventListener('keydown', this.#submitOnEnter)
+		this.#$txt.addEventListener('keydown', this.#submitOnEnter)
 		this.addEventListener('input', this.#updateValue)
 
 		this.#validate()
+		this.update()
+	}
+
+	formResetCallback() {
+		this.#internals.setFormValue('')
+		console.log([...new FormData(this.#internals.form).entries()])
+		this.value = ''
 		this.update()
 	}
 
@@ -250,8 +294,10 @@ export class TextMessageField extends HTMLElement {
 	reportValidity() {return this.#internals.reportValidity() }
 
 	update() {
-		this.$txt.textContent = this.value
-		this.$plh.textContent = this.placeholder
+		raf(() => {
+			this.#$txt.textContent = this.value
+			this.#$plh.textContent = this.placeholder
+		})
 	}
 }
 customElements.define(TextMessageField.tag, TextMessageField)
