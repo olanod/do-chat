@@ -136,6 +136,7 @@ export class Chat extends HTMLElement {
 	display: flex;
 	flex: 1;
 	flex-direction: column-reverse;
+	overflow: auto;
 }`]
 	static autoInsert = {
 		textMessage: TextMessage,
@@ -145,7 +146,7 @@ export class Chat extends HTMLElement {
 	me = unknownDude
 
 	#chan
-  #autoInsert = ({fieldName, ...data}) => {
+	#autoInsert = ({fieldName, ...data}) => {
 		if (fieldName in Chat.autoInsert) {
 			let Msg = Chat.autoInsert[fieldName]
 			let msg = Object.assign(new Msg, {
@@ -242,7 +243,7 @@ export class TextMessageField extends HTMLElement {
 		}), this.value)
 		this.#validate()
 	}
-  #submit = () =>	{
+	#submit = () =>	{
 		if (!this.checkValidity()) return
 		this.#internals.form.dispatchEvent(
 			new Event('submit', {cancelable: true, bubbles: true})
