@@ -28,7 +28,7 @@
 		<do-dude name="bob" slot="people">Bob</do-dude>
 
 		<form slot="actions">
-				<do-msg-field name="message">
+				<do-msg-field>
 						<button>send</button>
 				</do-msg-field>
 		</form>
@@ -38,7 +38,7 @@
 	<script type="module">
 	 const chan = new BroadcastChannel('serious-talk')
 	 chan.addEventListener('message', ({data}) => console.log(data))
-	 addEventListener('serious-talk', ({detail: msg}) => console.log(msg.content))
+	 addEventListener('serious-talk', ({detail: msg}) => console.log({...msg}))
 	</script>
 </body>
 

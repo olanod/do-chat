@@ -137,21 +137,21 @@ export class Chat extends HTMLElement {
 	flex: 1;
 	flex-direction: column-reverse;
 }`]
-	static autoInsert = new Map([
-		['text-message', TextMessage],
-	])
+	static autoInsert = {
+		textMessage: TextMessage,
+	}
 
 	channel = 'default'
 	me = unknownDude
 
 	#chan
-  #autoInsert = ({type, ...data}) => {
-		if (Chat.autoInsert.has(type)) {
-			let Msg = Chat.autoInsert.get(type)
+  #autoInsert = ({fieldName, ...data}) => {
+		if (fieldName in Chat.autoInsert) {
+			let Msg = Chat.autoInsert[fieldName]
 			let msg = Object.assign(new Msg, {
 				time: new Date(data.ts),
 				from: this.me,
-				content: data[type],
+				content: data[fieldName],
 			})
 			this.dispatchEvent(new CustomEvent(this.channel, {detail: msg, bubbles: true}))
 			raf(() => this.prepend(msg))
@@ -222,7 +222,7 @@ export class TextMessageField extends HTMLElement {
 	#$txt
 	#$plh
 	#internals
-	#name = 'message'
+	#name = 'textMessage'
 	#validate = () => {
 		if (!this.value) {
 			this.#internals.setValidity({customError: true}, 'Say something!')
@@ -236,8 +236,8 @@ export class TextMessageField extends HTMLElement {
 		else this.#$plh.textContent = this.placeholder
 
 		this.#internals.setFormValue(formData({
-			type: this.type,
-			[this.type]: this.value,
+			fieldName: this.name,
+			[this.name]: this.value,
 			ts: new Date().toISOString()
 		}), this.value)
 		this.#validate()
@@ -248,7 +248,6 @@ export class TextMessageField extends HTMLElement {
 			new Event('submit', {cancelable: true, bubbles: true})
 		)
 		this.#internals.form.reset()
-		this.#validate()
 	}
 	#submitOnEnter = e => {
 		if (e.code === 'Enter' && !e.shiftKey) {
@@ -278,14 +277,14 @@ export class TextMessageField extends HTMLElement {
 
 	formResetCallback() {
 		this.#internals.setFormValue('')
-		console.log([...new FormData(this.#internals.form).entries()])
 		this.value = ''
+		this.#validate()
 		this.update()
 	}
 
 	get form() { return this.#internals.form }
 	get name() { return this.#name }
-	get type() { return 'text-message' }
+	get type() { return this.localName }
 	get validity() { return this.#internals.validity }
 	get validationMessage() { return this.#internals.validationMessage }
 	get willValidate() {return this.#internals.willValidate }
